@@ -120,13 +120,21 @@ int main(void) {
 
   lx->ref_num = 1;
   lx->refs[0] = &ra->left->left;
+  free(*lx->refs[0]);
+  *lx->refs[0] = NULL;
 
   ly->ref_num = 1;
   ly->refs[0] = &ra->right->left;
+  free(*ly->refs[0]);
+  *ly->refs[0] = NULL;
 
   lz->ref_num = 2;
   lz->refs[0] = &ra->left->right;
   lz->refs[1] = &ra->right->right;
+  free(*lz->refs[0]);
+  *lz->refs[0] = NULL;
+  free(*lz->refs[1]);
+  *lz->refs[1] = NULL;
 
   derefer(S);
 
