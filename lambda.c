@@ -22,7 +22,7 @@ lambda new_lambda() {
   lambda new;
   new = malloc(sizeof(struct lambda_s));
   if (new == NULL) {
-    fprintf(stderr, "Error: cannot alloc memory for lambda_s\n");
+    fprintf(stderr, "Error: new_lambda: malloc failed\n");
     exit(-1);
   }
   new->ref_num = 0;
