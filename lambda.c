@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 enum nodetype {
+  /* TODO: dummy */
   VAR,
   LAM,
   APP,
@@ -83,6 +84,64 @@ void print_lambda(lambda m) {
   putchar('\n');
 }
 
+struct refer_ctx_s {
+  int n;
+  lambda lams[64];
+  char vars[64];
+};
+
+struct refer_ctx_s add_lam(struct refer_ctx_s ctx, lambda m, char c) {
+  int n = ctx.n++;
+  ctx.lams[n] = m;
+  ctx.vars[n] = c;
+  return ctx;
+}
+
+void add_reference(lambda m, lambda *ref) {
+  int num = m->ref_num++;
+  m->refs[num] = ref;
+}
+
+int find_ctx_index(struct refer_ctx_s ctx, char var) {
+  int i;
+  for (i = ctx.n - 1; i >= 0; i--) {
+    if (ctx.vars[i] == var) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void refer_r(lambda m, struct refer_ctx_s ctx, lambda *referer) {
+  int i;
+
+  switch (m->type) {
+  case VAR:
+    i = find_ctx_index(ctx, m->var);
+    add_reference(ctx.lams[i], referer);
+    free(m);
+    m = *referer = NULL;
+    break;
+  case LAM:
+    ctx = add_lam(ctx, m, m->var);
+    m->var = 0;
+    refer_r(m->left, ctx, &m->left);
+    break;
+  case APP:
+    refer_r(m->left, ctx, &m->left);
+    refer_r(m->right, ctx, &m->right);
+    break;
+  }
+}
+
+void refer(lambda m) {
+  /* TODO: Dummy */
+  /* TODO: Free var into initial_ctx*/
+  struct refer_ctx_s initial_ctx;
+  initial_ctx.n = 0;
+  refer_r(m, initial_ctx, NULL);
+}
+
 void derefer_r(lambda m, char c) {
   int i;
   switch (m->type) {
@@ -113,31 +172,12 @@ int main(void) {
   print_lambda(K);
   print_lambda(S);
 
-  lambda lx = S;
-  lambda ly = lx->left;
-  lambda lz = ly->left;
-  lambda ra = lz->left;
+  refer(K);
+  derefer(K);
+  print_lambda(K);
 
-  lx->ref_num = 1;
-  lx->refs[0] = &ra->left->left;
-  free(*lx->refs[0]);
-  *lx->refs[0] = NULL;
-
-  ly->ref_num = 1;
-  ly->refs[0] = &ra->right->left;
-  free(*ly->refs[0]);
-  *ly->refs[0] = NULL;
-
-  lz->ref_num = 2;
-  lz->refs[0] = &ra->left->right;
-  lz->refs[1] = &ra->right->right;
-  free(*lz->refs[0]);
-  *lz->refs[0] = NULL;
-  free(*lz->refs[1]);
-  *lz->refs[1] = NULL;
-
+  refer(S);
   derefer(S);
-
   print_lambda(S);
 
   return 0;
