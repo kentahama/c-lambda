@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define REF_MAX 64
+
 enum nodetype {
   VAR,
   LAM,
@@ -10,7 +12,7 @@ enum nodetype {
 
 struct lambda_s {
   enum nodetype type;
-  struct lambda_s **refs[64];
+  struct lambda_s **refs[REF_MAX];
   int ref_num;
   char var;
   struct lambda_s *left;
@@ -63,7 +65,7 @@ lambda_root root(lambda m) {
   return ret;
 }
 
-void free_all(lambda m) {
+void delete_lambda_r(lambda m) {
   if (m == NULL) return;
   switch (m->type) {
   case VAR:
@@ -71,24 +73,28 @@ void free_all(lambda m) {
     m = NULL;
     break;
   case LAM:
-    free_all(m->left);
+    delete_lambda_r(m->left);
     m->left = NULL;
     free(m);
     m = NULL;
     break;
   case APP:
-    free_all(m->left);
-    free_all(m->right);
+    delete_lambda_r(m->left);
+    delete_lambda_r(m->right);
     m->left = m->right = NULL;
     free(m);
     m = NULL;
     break;
   case ROOT:
-    free_all(m->left);
+    delete_lambda_r(m->left);
     m->left = NULL;
     free(m);
     m = NULL;
   }
+}
+
+void delete_lambda(lambda m) {
+  delete_lambda_r(m);
 }
 
 void print_lambda_r(lambda m) {
@@ -144,6 +150,10 @@ struct refer_ctx_s add_lam(struct refer_ctx_s ctx, lambda m, char c) {
 
 void add_reference(lambda m, lambda *ref) {
   int num = m->ref_num++;
+  if (num == REF_MAX) {
+    fprintf(stderr, "ERROR: add_reference: stack overflow\n");
+    exit(EXIT_FAILURE);
+  }
   m->refs[num] = ref;
 }
 
@@ -164,8 +174,12 @@ void refer_r(lambda *referrer, struct refer_ctx_s ctx) {
   switch (m->type) {
   case VAR:
     i = find_ctx_index(ctx, m->var);
+    if (i == -1) {
+      fprintf(stderr, "WARNING: refer_r: free var '%c' found\n", m->var);
+      return;
+    }
     add_reference(ctx.lams[i], referrer);
-    free(m);
+    delete_lambda(m);
     m = *referrer = NULL;
     break;
   case LAM:
@@ -191,6 +205,13 @@ void refer(lambda_root m) {
 
   initial_ctx.n = 0;
   refer_r(&m->left, initial_ctx);
+}
+
+void refer_inner(lambda *referrer) {
+  struct refer_ctx_s initial_ctx;
+
+  initial_ctx.n = 0;
+  refer_r(referrer, initial_ctx);
 }
 
 void derefer_r(lambda m, char c) {
@@ -251,61 +272,107 @@ lambda copy_r(lambda m) {
 }
 
 lambda copy(lambda m) {
-  lambda ret;
+  return copy_r(m);
+}
+
+int is_beta_redex(lambda m) {
+  if (m == NULL) return 0;
+  if (m->left == NULL) return 0;
+  if (m->type == APP && m->left->type == LAM) {
+    return 1;
+  }
+  else {
+    return 0;
+  }
+}
+
+void rename_vars(lambda m) {
   lambda_root tmp_root;
 
   tmp_root = root(m);
-  derefer(tmp_root);
-  free(tmp_root);
-  tmp_root = NULL;
-
-  ret = copy_r(m);
-
-  tmp_root = root(ret);
   refer(tmp_root);
-  free(tmp_root);
+  derefer(tmp_root);
+  tmp_root->left = NULL;
+  delete_lambda(tmp_root);
   tmp_root = NULL;
-
-  return ret;
 }
 
-/* TODO: let beta retruns lambda (not use side efferct) */
-void beta_reduction_step(lambda *referrer) {
+/* TODO: let beta returns lambda (not use side efferct) */
+void beta_reduction_step(lambda *referrer, lambda_root root) {
   lambda m = *referrer;
   lambda lam, applicant;
+  lambda copied;
   int i;
 
-  if (m->type != APP && m->left->type != LAM) {
+  if (!is_beta_redex(m)) {
     fprintf(stderr, "Warning: beta_reduction: passed arg is not beta redex\n");
     return;
-    //    return referrer;
   }
 
   lam = m->left;
   applicant = m->right;
 
+  refer_inner(&m->left);
+
   for (i = 0; i < lam->ref_num; i++) {
     if (*lam->refs[i] != NULL) {
       fprintf(stderr, "WARNING: beta_reduction_step: referee is not NULL\n");
     }
-    *lam->refs[i] = copy(applicant);
+    copied = copy(applicant);
+    refer_inner(&copied);
+    *lam->refs[i] = copied;
   }
   *referrer = lam->left;
   lam->left = NULL;
   free(lam);
   lam = NULL;
 
-  free_all(applicant);
+  delete_lambda(applicant);
 
   m->left = m->right = NULL;
   free(m);
   m = NULL;
+
+  derefer(root);
+}
+
+lambda* find_beta_redex(lambda *referrer) {
+  lambda m = *referrer;
+  lambda *r;
+
+  if (m == NULL) return NULL;
+  switch (m->type) {
+  case VAR:
+    return NULL;
+  case LAM:
+    return find_beta_redex(&m->left);
+  case APP:
+    if (is_beta_redex(m)) {
+      return referrer;
+    }
+    r = find_beta_redex(&m->left);
+    if (r != NULL) return r;
+    r = find_beta_redex(&m->right);
+    return r;
+  }
+}
+
+void beta_reduction(lambda_root m) {
+  lambda *r;
+
+  rename_vars(m->left);
+  print_lambda(m);
+
+  while ((r = find_beta_redex(&m->left)) != NULL) {
+    beta_reduction_step(r, m);
+    print_lambda(m);
+  }
 }
 
 int main(void) {
   lambda K = lam('x', lam('y', var('x')));
-  lambda S = lam('x', lam('y', lam('z', app(app(var('x'), var('z')), app(app(lam('x', var('x')),var('y')), var('z'))))));
-  lambda SKK = app(app(copy_r(S), copy_r(K)), copy_r(K));
+  lambda S = lam('x', lam('y', lam('z', app(app(var('x'), var('z')), app(var('y'), var('z'))))));
+  lambda SKK = app(app(copy(S), copy(K)), copy(K));
   lambda_root rK = root(K);
   lambda_root rS = root(S);
   lambda_root rSKK = root(SKK);
@@ -314,26 +381,7 @@ int main(void) {
   print_lambda(rS);
   print_lambda(rSKK);
 
-  refer(rK);
-  derefer(rK);
-  print_lambda(rK);
-
-  refer(rS);
-  derefer(rS);
-  print_lambda(rS);
-
-  refer(rSKK);
-  derefer(rSKK);
-  print_lambda(rSKK);
-
-  refer(rSKK);
-  print_lambda(rSKK);
-  beta_reduction_step(&rSKK->left);
-  print_lambda(rSKK);
-  /* beta_reduction_step(&rSKK->left); */
-  /* print_lambda(rSKK); */
-  derefer(rSKK);
-  print_lambda(rSKK);
+  beta_reduction(rSKK);
 
   return 0;
 }
