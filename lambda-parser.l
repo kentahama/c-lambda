@@ -14,5 +14,5 @@ other           .
 "->"            { return ARROW; };
 {paren}         { return yytext[0]; };
 "\n"            { return  LF; };
-other           { fprintf(stderr, "Illegal character %c, ignored\n", yytext[0]); };
+{other}         { fprintf(stderr, "Illegal character %c, ignored\n", yytext[0]); };
 %%
