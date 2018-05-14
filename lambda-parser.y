@@ -35,9 +35,7 @@ int main(void) {
 
     yyin = stdin;
 
-    if (yyparse()) {
-        fprintf(stderr, "An error occured, aborting.\n");
-        return -1;
-    }
+    while (yyparse()) ;
+
     return 0;
 }
