@@ -12,11 +12,11 @@ void yyerror(const char *s);
     void *m;
     char cval;
 }
-%token <cval>		VAR
-%token			LAM LF ARROW
-%type	<m>		line expr term var lam app
+%token <cval>           VAR
+%token                  LAM LF ARROW
+%type   <m>             line expr term var lam app
 
-%start			line
+%start                  line
 
 %%
 line : /*empty*/ { $$ = NULL; }
@@ -36,8 +36,8 @@ int main(void) {
     yyin = stdin;
 
     if (yyparse()) {
-	fprintf(stderr, "An error occured, aborting.\n");
-	return -1;
+        fprintf(stderr, "An error occured, aborting.\n");
+        return -1;
     }
     return 0;
 }
